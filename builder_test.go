@@ -20,6 +20,18 @@ func TestBuilder_Build(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "IPv4",
+			builder: New().WithDomain("192.168.1.1").WithPort(80),
+			want:    "http://192.168.1.1:80",
+			wantErr: false,
+		},
+		{
+			name:    "IPv6",
+			builder: New().WithDomain("[1080::8:800:200c:417a]").WithPort(80),
+			want:    "http://[1080::8:800:200c:417a]:80",
+			wantErr: false,
+		},
+		{
 			name:    "Empty domain",
 			builder: New().WithDomain(""),
 			want:    "",
@@ -40,8 +52,8 @@ func TestBuilder_Build(t *testing.T) {
 		{
 			name:    "Extra scheme",
 			builder: New().WithScheme("https").WithDomain("http://example.com"),
-			want:    "https://example.com",
-			wantErr: false,
+			want:    "",
+			wantErr: true,
 		},
 		{
 			name:    "Port",
@@ -52,8 +64,8 @@ func TestBuilder_Build(t *testing.T) {
 		{
 			name:    "Extra port",
 			builder: New().WithDomain("example.com:80").WithPort(8080),
-			want:    "http://example.com:8080",
-			wantErr: false,
+			want:    "",
+			wantErr: true,
 		},
 		{
 			name:    "Invalid port",
@@ -64,8 +76,8 @@ func TestBuilder_Build(t *testing.T) {
 		{
 			name:    "Extra scheme and port",
 			builder: New().WithDomain("ftp://example.com:80").WithPort(8080),
-			want:    "http://example.com:8080",
-			wantErr: false,
+			want:    "",
+			wantErr: true,
 		},
 		{
 			name:    "Credentials",
@@ -142,14 +154,14 @@ func TestBuilder_Build(t *testing.T) {
 		{
 			name:    "Empty query key",
 			builder: New().WithDomain("example.com").WithQuery("", "val"),
-			want:    "http://example.com",
-			wantErr: false,
+			want:    "",
+			wantErr: true,
 		},
 		{
 			name:    "Empty query value",
 			builder: New().WithDomain("example.com").WithQuery("key", ""),
-			want:    "http://example.com",
-			wantErr: false,
+			want:    "",
+			wantErr: true,
 		},
 		{
 			name:    "Anchor",
@@ -171,10 +183,10 @@ func TestBuilder_Build(t *testing.T) {
 				WithDomain("test.example.com").
 				WithPort(1234).
 				WithPath("path1", "path2").
-				WithQuery("key1", "val1").
+				WithQuery("key1", "val1", "val2").
 				WithQuery("key2", "val2").
 				WithAnchor("#Anchor"),
-			want:    "https://user:pass@test.example.com:1234/path1/path2?key1=val1&key2=val2#Anchor",
+			want:    "https://user:pass@test.example.com:1234/path1/path2?key1=val1&key1=val2&key2=val2#Anchor",
 			wantErr: false,
 		},
 	}

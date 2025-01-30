@@ -3,10 +3,10 @@ package url_builder
 import (
 	"fmt"
 	"net/url"
+	"slices"
 	"strings"
 )
 
-// Builder constructs URLs step by step. Domain name is the only required value.
 type Builder struct {
 	scheme      string
 	domain      string
@@ -37,19 +37,49 @@ func (b *Builder) WithScheme(scheme string) *Builder {
 	return b
 }
 
-// WithDomain sets the domain name of the URL. This part is required.
-func (b *Builder) WithDomain(domain string) *Builder {
-	b.domain = domain
+// WithSchemeHTTP sets the URL scheme to HTTP.
+func (b *Builder) WithSchemeHTTP() *Builder {
+	b.scheme = "http"
 	return b
 }
 
-// WithPort sets the port number. Must be in the range [1, 65535].
+// WithSchemeHTTPS sets the URL scheme to HTTPS.
+func (b *Builder) WithSchemeHTTPS() *Builder {
+	b.scheme = "https"
+	return b
+}
+
+// WithDomain sets the domain name of the URL.
+// Build will return an error if input string contains slashes or colons ("/", ":").
+func (b *Builder) WithDomain(domain string) *Builder {
+	b.domain = strings.TrimSuffix(domain, "/")
+	return b
+}
+
+// WithIPv4 sets given IPv4 address as the domain of the URL.
+// Build will return an error if input string contains slashes or colons ("/", ":").
+func (b *Builder) WithIPv4(address string) *Builder {
+	b.domain = strings.TrimSuffix(address, "/")
+	return b
+}
+
+// WithIPv6 sets given IPv6 address as the domain of the URL.
+// Build will return an error if input string contains slashes ("/").
+func (b *Builder) WithIPv6(address string) *Builder {
+	address = strings.TrimSuffix(strings.Trim(address, "[]"), "/")
+	b.domain = fmt.Sprintf("[%s]", address)
+	return b
+}
+
+// WithPort sets the port number.
+// Build will return an error if port not in [1, 65535] range.
 func (b *Builder) WithPort(port int) *Builder {
 	b.port = port
 	return b
 }
 
 // WithCredentials sets the username and password for authentication.
+// Build will return an error if one of the parameters is empty.
 func (b *Builder) WithCredentials(user, password string) *Builder {
 	b.credentials = &credentials{
 		user:     user,
@@ -66,7 +96,8 @@ func (b *Builder) WithPath(elements ...string) *Builder {
 }
 
 // WithQuery adds query parameters to the URL.
-// If the same key is added multiple times, values are appended rather than replaced.
+// If the same key is added multiple times, values are appended.
+// Build will return an error on empty keys or values.
 func (b *Builder) WithQuery(key string, values ...string) *Builder {
 	b.query[key] = append(b.query[key], values...)
 	return b
@@ -85,24 +116,25 @@ func (b *Builder) Build() (string, error) {
 		return "", fmt.Errorf("domain is required")
 	}
 
-	rawUrl := b.domain
-	if !strings.Contains(b.domain, "//") {
-		rawUrl = fmt.Sprintf("%s://%s", b.scheme, b.domain)
-	}
-	u, err := url.Parse(rawUrl)
-	if err != nil {
-		return "", err
+	// check given domain
+	// todo: can't detect if given ipv6 contains port, so result string might be broken.
+	if strings.Contains(b.domain, "/") || // assume domain contains scheme
+		strings.Count(b.domain, ":") == 1 { // assume domain contains port (valid ipv6 have at least 2 colons)
+		return "", fmt.Errorf("domain contains forbidden symbols")
 	}
 
-	u.Host = u.Hostname()
-	u.Scheme = b.scheme
+	rawBaseUrl := fmt.Sprintf("%s://%s", b.scheme, b.domain)
 
 	if b.port > 0 {
 		if b.port > 65535 {
 			return "", fmt.Errorf("port must be in range [1, 65535]")
 		}
+		rawBaseUrl = fmt.Sprintf("%s:%d", rawBaseUrl, b.port)
+	}
 
-		u.Host = fmt.Sprintf("%s:%d", u.Host, b.port)
+	u, err := url.Parse(rawBaseUrl)
+	if err != nil {
+		return "", err
 	}
 
 	if b.credentials != nil {
@@ -121,22 +153,16 @@ func (b *Builder) Build() (string, error) {
 		u = u.JoinPath(b.path...)
 	}
 
-	qVal := url.Values{}
 	for k, v := range b.query {
-		if k == "" || len(v) == 0 {
-			continue
+		if k == "" {
+			return "", fmt.Errorf("query key is empty")
 		}
-		for i := range v {
-			if v[i] == "" {
-				continue
-			}
-			qVal.Add(k, v[i])
+		if i := slices.Index(v, ""); i != -1 {
+			return "", fmt.Errorf("query query value for key %s", k)
 		}
 	}
 
-	if len(qVal) > 0 {
-		u.RawQuery = qVal.Encode()
-	}
+	u.RawQuery = url.Values(b.query).Encode()
 
 	if b.anchor != "" {
 		u.Fragment = b.anchor
